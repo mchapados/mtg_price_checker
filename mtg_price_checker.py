@@ -1,8 +1,6 @@
 '''
 mtg_price_checker.py
-COIS 1400H - Assignment 4
-
-by Morgan Chapados (0653943)
+by Morgan Chapados
 March-April, 2022
 
 This program gets a list of Magic: the Gathering (MTG) cards from one source on
