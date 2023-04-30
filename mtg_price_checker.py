@@ -42,7 +42,6 @@ def build_url(name, set_name, number = None, modifier = None):
         return url + clean(name) + "-" + str(number) + "-" + set_name + "/"
     return url + clean(name) + "-" + str(number) + "-" + clean(modifier) + "-" + set_name + "/"
 
-# fetches the current price for a card given its url; returns -1 on failure
 def get_price(data):
     name, set_code, number = data
     modifiers = ['full-art', 'borderless', 'alternate-art', 'jumpstart-exclusive', 'planar-showcase']
