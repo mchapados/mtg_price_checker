@@ -1,64 +1,142 @@
 '''
 mtg_price_checker.py
-by Morgan Chapados
-March-April, 2022
+by Morgan G. Chapados
 
-This program gets a list of Magic: the Gathering (MTG) cards from one source on
-the web, then looks up the current price (in Canadian dollars) for each card 
-from a second source.
+Written: March-April, 2022
+Updated: April, 2023
 '''
 
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-import matplotlib.pyplot as plt
-import numpy as np
 
-# get the decklist from MTG Goldfish and put it in a dataframe
-deck_url = "https://www.mtggoldfish.com/deck/download/4628878"
-decklist = pd.read_csv(deck_url, sep="\n", header=None, names=["card"])
-# separate the count and card name into two columns
-# Note: count must be no more than 2 digits (i.e. between 0-99)
-decklist['count'] = decklist['card'].str[0:2].astype(int)
-decklist['card'] = decklist['card'].str[2:]
-decklist['card'] = decklist['card'].str.strip() # trim any whitespace
+# returns a card name with punctuation removed and spaces replaced with -
+def clean(name):
+    return name.replace(" // ", "-").replace(" ", "-").replace("'", "").replace(",", "").lower()
 
-# cards with any of these names are free (because most MTG players already have 
-# piles of them and many local card shops will give them to new players)
-basic_lands = {"Island", "Mountain", "Plains", "Swamp", "Forest"}
+# returns the full name of a set given its 3-letter code
+def get_set_name(code):
+    #TODO
+    return "march-of-the-machine"
 
-# this function looks up the price for a card, and returns that price * number
-# of copies in the decklist
-def process_card(data):
-    card, count = data
-    price = 0.0 # basic lands are $0.00
-    if (card not in basic_lands):
-        # search Wizard Tower for a card based on its name and save search
-        # result to a dataframe
-        df = pd.read_html("https://www.kanatacg.com/products/search?query={}"
-            .format(card.replace(" ", "+")))
-        # pull out the card price and multiply by count
-        price = round(float(df[2][1][0][5:]) * count, 2)
-    # output the price for each card
-    print("price for {} {}: ${:.2f}".format(count, card, price))
+# returns the url for a card page on Face to Face's website
+# because FTF is annoying, a url may have any one of the following three formats,
+def build_url(name, set_code, number = None, modifier = None):
+    url = "https://www.facetofacegames.com/"
+    if number == None:
+        return url + clean(name) + "-" + clean(set_code) + "/"
+    if modifier == None:
+        return url + clean(name) + "-" + str(number) + "-" + clean(get_set_name(set_code)) + "/"
+    return url + clean(name) + "-" + str(number) + "-" + clean(modifier) + "-" + clean(get_set_name(set_code)) + "/"
+
+# fetches the current price for a card given its url; returns -1 on failure
+def get_price(data):
+    name, set_code, number = data
+    modifiers = ['full-art', 'borderless', 'jumpstart-exclusive', 'planar-showcase']
+    urls = [build_url(name, set_code, number), build_url(name, set_code)]
+    price = 0.0
+    found = False
+    
+    for url in urls:
+        try:
+            df = pd.read_csv(url, sep="\n", header=None) # read the card page from Face to Face
+        except:
+            continue # if first url fails to find, try the second
+        found = True # if we found the card, stop searching
+        break 
+    if not found: # if both urls failed, try with modifiers
+        for mod in modifiers:
+            url = build_url(name, set_code, number, mod)
+            try:
+                df = pd.read_csv(url, sep="\n", header=None) # get the card price from Face to Face
+            except:
+                continue # if  modifier fails to find, try the next
+            found = True # if we found the card, stop searching
+            break 
+    if not found: # if none of the urls worked, give up
+        print(f"{name} could not be found")
+        return price
+    
+    # this part extracts the actual price from the webpage
+    for j in df.index:
+        if '<meta itemprop="price"' in df[0][j]:
+            start = df[0][j].find("content") + 9
+            end = df[0][j].find(">", start) - 1
+            price = float(df[0][j][start:end])
+            print(f"Price for {name}: $ {price}")
+            break
     return price
 
-# call the above function on each card in the decklist and save the prices
-with ThreadPoolExecutor(6) as tp:
-    decklist['price'] = list(tp.map(process_card, zip(decklist['card'], decklist['count'])))
+def import_csv(filename):
+    return pd.read_csv(filename)
 
-# output the total price for the deck
-print("\ntotal price: ${:.2f}".format(sum(decklist['price'])))
+if __name__ == '__main__':
+    # display the menu and get the user's selection
+    while True:
+        print("Select an Option: \n1: Import a CSV file \n2: Input cards one at a time \n3: Exit")
+        choice = input(">> ")
+        try:
+            choice = int(choice)
+        except:
+            continue
+        if choice == 3:
+            exit()
+        if choice == 1 or choice == 2:
+            break
+    
+    # read card list from CSV file
+    if choice == 1: 
+        print("NOTE: your file must be in the same folder as this program, and you must include the extension." 
+            "\n(Or you can input an absolute path to a file stored anywhere.)")
+        filename = input("Enter filename >> ")
+        try:
+            card_list = import_csv(filename)
+        except:
+            print(f"ERROR: {filename} could not be opened.")
+            exit()
+        if 'name' not in card_list.columns or 'set' not in card_list.columns or 'number' not in card_list.columns:
+            print("ERROR: Wrong format. Your CSV file must have columns named 'name', 'set', and 'number'. Please edit your file and try again.")
+            exit()
+    
+    # input cards one at a time
+    if choice == 2: 
+        card_list = pd.DataFrame()
+        card_list['name']   = ''
+        card_list['set']    = ''
+        card_list['number'] = ''
+        card_list['count']  = ''
+        print("Press ENTER (leaving name field blank) at any time to stop inputting cards." 
+            "\nNOTES: Input is not case-sensitive. Punctuation is optional." 
+            "\n       Double-faced cards must include both names separated by //." 
+            "\n       If the number is not printed on the card (for older cards), leave blank.")
+        while True:
+            name     = input("Card Name >> ")
+            if name == '':
+                break
+            set_code = input("Set Code >> ")
+            number   = int(input("Card Number >> "))
+            count    = int(input("Count >> "))
+            card_data = pd.DataFrame({
+                "name":   [name],
+                "set":    [set_code],
+                "number": [number],
+                "count":  [count]
+            })
+            card_list = pd.concat([card_list, card_data], ignore_index=True)
 
-# create a column for price per copy (to use in visualization below)
-decklist['price_each'] = decklist['price'] / decklist['count']
+    # get prices for each card in the list
+    print("Searching...")
+    with ThreadPoolExecutor(6) as tp:
+        card_list['price'] = list(tp.map(get_price, zip(card_list['name'], card_list['set'], card_list['number'])))
 
-# this part visualizes the data as a scatter plot, showing number of copies X 
-# card price per copy (gives the user an idea of how many expensive vs. cheap
-# cards are in the decklist)
-np.random.seed(13)
-colours = np.random.rand(len(decklist))
-plt.scatter(decklist['count'], decklist['price_each'], s=200, c=colours, alpha=0.5)
-plt.title("Cards by Price", fontdict={'fontweight':'bold'})
-plt.xlabel("Number of Copies", fontdict={'fontweight':'bold'})
-plt.ylabel("Card Price (per Copy)", fontdict={'fontweight':'bold'})
-plt.show()
+    # set count column and calculate total prices
+    if 'count' not in card_list.columns:
+        card_list['count'] = 1
+    card_list['total_price'] = card_list['price'] * card_list['count']
+    # output the total price for the list
+    print("\nTotal price for all cards: $ {:.2f}".format(sum(card_list['total_price'])))
+
+    choice = input("Write data to a file? (Y/N) >> ")
+    if choice.upper() == 'Y':
+        print("NOTE: if filename already exists, it will be overwritten. \nDo not enter the file extension.")
+        filename = input("Enter filename >> ") + ".csv"
+        card_list.to_csv(filename)
