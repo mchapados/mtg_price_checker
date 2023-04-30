@@ -7,3 +7,5 @@ Many Magic: the Gathering (MTG) players are concerned about the prices of cards,
 This program is a tool that MTG players could use to efficiently price out a list of cards without having to manually look up each one, a process that can be very time-consuming if they’re interested in the prices of many different cards.
 
 The program pulls current price data from Face to Face Games (https://www.facetofacegames.com/), a Canadian online retailer.
+
+NOTE: This program can only find prices for near-mint non-foil cards; however, it _should_ work for special versions of cards such as alternate art and borderless.

@@ -8,6 +8,7 @@ Updated: April, 2023
 
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
+from mtgsdk import Set
 
 # returns a card name with punctuation removed and spaces replaced with -
 def clean(name):
@@ -15,24 +16,37 @@ def clean(name):
 
 # returns the full name of a set given its 3-letter code
 def get_set_name(code):
-    #TODO
-    return "march-of-the-machine"
+    if code.upper() == 'MOM': # necessary because API is not updated with the latest sets
+        return "march-of-the-machine"
+    if code.upper() == 'ONE':
+        return "phyrexia-all-will-be-one"
+    while True:
+        try:
+            set_name = Set.find(code)
+        except:
+            continue
+        break
+    return clean(set_name.name)
 
 # returns the url for a card page on Face to Face's website
-# because FTF is annoying, a url may have any one of the following three formats,
-def build_url(name, set_code, number = None, modifier = None):
+# because FTF is annoying, a url may have any one of SIX possible formats (found so far):
+# name-set_code || name-number-set_name || name-number-modifier-set_name || name-modifier-set_name || name-set_name || name-modifier-number-set_name
+def build_url(name, set_name, number = None, modifier = None):
     url = "https://www.facetofacegames.com/"
     if number == None:
-        return url + clean(name) + "-" + clean(set_code) + "/"
+        url + clean(name)
+        if modifier != None:
+            url += "-" + modifier
+        return url + "-" + set_name + "/"
     if modifier == None:
-        return url + clean(name) + "-" + str(number) + "-" + clean(get_set_name(set_code)) + "/"
-    return url + clean(name) + "-" + str(number) + "-" + clean(modifier) + "-" + clean(get_set_name(set_code)) + "/"
+        return url + clean(name) + "-" + str(number) + "-" + set_name + "/"
+    return url + clean(name) + "-" + str(number) + "-" + clean(modifier) + "-" + set_name + "/"
 
 # fetches the current price for a card given its url; returns -1 on failure
 def get_price(data):
     name, set_code, number = data
-    modifiers = ['full-art', 'borderless', 'jumpstart-exclusive', 'planar-showcase']
-    urls = [build_url(name, set_code, number), build_url(name, set_code)]
+    modifiers = ['full-art', 'borderless', 'alternate-art', 'jumpstart-exclusive', 'planar-showcase']
+    urls = [build_url(name, get_set_name(set_code), number), build_url(name, get_set_name(set_code)), build_url(name, set_code)]
     price = 0.0
     found = False
     
@@ -40,18 +54,21 @@ def get_price(data):
         try:
             df = pd.read_csv(url, sep="\n", header=None) # read the card page from Face to Face
         except:
-            continue # if first url fails to find, try the second
+            continue # if first url fails to find, try the next
         found = True # if we found the card, stop searching
         break 
     if not found: # if both urls failed, try with modifiers
         for mod in modifiers:
-            url = build_url(name, set_code, number, mod)
-            try:
-                df = pd.read_csv(url, sep="\n", header=None) # get the card price from Face to Face
-            except:
-                continue # if  modifier fails to find, try the next
-            found = True # if we found the card, stop searching
-            break 
+            urls = [build_url(name, get_set_name(set_code), number, mod), build_url(name, get_set_name(set_code), None, mod), build_url(name+"-"+mod, get_set_name(set_code), number)]
+            for url in urls:
+                try:
+                    df = pd.read_csv(url, sep="\n", header=None) # get the card price from Face to Face
+                except:
+                    continue # if  modifier fails to find, try the next
+                found = True # if we found the card, stop searching
+                break 
+            if found:
+                break
     if not found: # if none of the urls worked, give up
         print(f"{name} could not be found")
         return price
